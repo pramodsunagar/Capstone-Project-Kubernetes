@@ -131,7 +131,6 @@ vi variables.tf
 variable "region" {
     default = "us-east-1"
 }
-
 # Change the SG ID. You can use the same SG ID used for your CICD Jump server
 # Basically the SG should open ports 22, 80, 8080, 9999, and 4243
 variable  "sg_id" {
@@ -156,6 +155,7 @@ variable key_name {
 variable public_key {
     default = "/home/ubuntu/.ssh/id_rsa.pub"   #Ubuntu OS
 }
+
 ```
 Initialise the directory
 ```
