@@ -58,61 +58,103 @@ vi main.tf
 Copy and post the below configuration
 ```
 provider "aws" {
-  profile = "default" # This line is not mandatory.
-  region  = "us-east-1"
+  region = var.region
 }
- 
-resource "aws_instance" "ec2" {
-  instance_type = "t2.micro"
-  ami = "ami-023c11a32b0207432"                                  
-  key_name = "capstone-key"
-  depends_on = [ aws_key_pair.capstone-key ]                      #The Key should be created first
-  vpc_security_group_ids = [aws_security_group.terraform_sg.id]   #attaching a security group for ssh
+
+resource "aws_key_pair" "mykeypair" {
+  key_name   = var.key_name
+  public_key = file(var.public_key)
+}
+
+# to create  EC2 instances
+resource "aws_instance" "my-machine" {
+  ami                    = var.ami_id
+  key_name               = var.key_name
+  vpc_security_group_ids = [var.sg_id]
+  instance_type          = var.ins_type
+  depends_on             = [aws_key_pair.mykeypair]
+
   tags = {
-    Name = "Ansible Server"}
+    Name = "Sirin-Provisioning-EC2"
+  }
+
+  # Ensure the .ssh directory exists before copying the file
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("/home/ubuntu/.ssh/id_rsa")  # Replace with the path to your private key
+      host        = self.public_ip
+    }
+
+    inline = [
+      "mkdir -p /home/ubuntu/.ssh"   # Ensure .ssh directory exists before copying the file
+    ]
+  }
+
+  provisioner "file" {
+    source      = "/home/ubuntu/.ssh/id_rsa"   # Source path on Host machine
+    destination = "/home/ubuntu/.ssh/id_rsa"  # Destination path on EC2 instance
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("/home/ubuntu/.ssh/id_rsa")  # Replace with the path to your private key
+      host        = self.public_ip
+    }
+  }
+
+  # After the file is copied, change its permissions
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("/home/ubuntu/.ssh/id_rsa")  # Replace with the path to your private key
+      host        = self.public_ip
+    }
+
+    inline = [
+      "chmod 400 /home/ubuntu/.ssh/id_rsa"  # Change the permissions of the copied file after it's been transferred
+    ]
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo ${self.public_ip} >> /home/ubuntu/provisioning-lab/public-ip
+    EOT
+  }
+}
+```
+Now, create the variables file with all variables to be used in the main.tf config file.
+```
+vi variables.tf
+```
+variable "region" {
+    default = "us-east-1"
 }
 
-#Generating the Key pair
-resource "tls_private_key" "capstone_key_pair" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-#Storing the Public key in AWS
-resource "aws_key_pair" "capstone-key" {
-  key_name   = "capstone-key"
-  public_key = tls_private_key.capstone_key_pair.public_key_openssh  #Passing the Public Key
-}
- 
-#Store the private Key on Local
-resource "local_file" "mykey_private" {
-  content = tls_private_key.capstone_key_pair.private_key_pem
-  filename = "capstone-key"
-}
-resource "local_file" "mykey_public" {
-  content = tls_private_key.capstone_key_pair.public_key_openssh
-  filename = "capstone-key.pub"
+# Change the SG ID. You can use the same SG ID used for your CICD Jump server
+# Basically the SG should open ports 22, 80, 8080, 9999, and 4243
+variable  "sg_id" {
+    default = "sgr-0e75d1ce8dc269c10" # us-east-1
 }
 
+# Choose a free tier Ubuntu AMI. You can use below. 
+variable "ami_id" {
+    default = "ami-0866a3c8686eaeeba" # us-east-1; Ubuntu
+}
 
-#Creating the security Group and enabling port 22 for ssh
-resource "aws_security_group" "terraform_sg" {
-  name        = "capstone-allow-ssh"
-  description = "security group that allows ssh and all egress traffic"
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  tags = {
-    Name = "capstone-allow-ssh"
-  }
+# We are only using t2.micro for this lab
+variable "ins_type" {
+    default = "t2.micro"
+}
+
+# Replace 'yourname' with your first name
+variable key_name {
+    default = "Sirin-Provisioner-KeyPair"
+}
+
+variable public_key {
+    default = "/home/ubuntu/.ssh/id_rsa.pub"   #Ubuntu OS
 }
 ```
 Initialise the directory
